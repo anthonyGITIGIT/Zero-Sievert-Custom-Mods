@@ -1,128 +1,62 @@
-# Deprecated: replaced by Immersive-Sounds-Doors.yaml
-# (intentionally left empty to avoid duplicate patches)
-=======
 # =============================================================================
-# Immersive-Sounds-Doors — Building Entry/Exit SFX
-# Purpose: Play a sound when entering/exiting buildings.
-# Design: Minimal watcher; prefers custom .ogg; singleton guard; safe cleanup.
-# Notes: Safe no-op if indoor flag or sounds are unavailable.
+# Immersive-Sounds-Doors — Building Entry/Exit SFX (base-anchored)
+# Anchors to: gml_GlobalScript_player_step_misc_globals.gml
+#   is_indoor = y > obj_map_generator.map_height;
+# Uses only base-game APIs; plays custom .ogg via audio_create_stream.
 # =============================================================================
 
-# --- Singleton election early (ensure only one controller drives the logic) ---
+# 1) Player parent Create: remember previous indoor state (instance var)
+gml_Object_obj_player_parent_Create_0:
+  - type: append
+    code: |-
+      // Track last indoor state for transition detection
+      was_indoor = is_undefined(is_indoor) ? false : is_indoor;
+
+# 2) Controller Create: load custom door sounds from mods/audio/building/*.ogg
 gml_Object_obj_controller_Create_0:
-  - type: prepend
-    code: |-
-      if (!variable_global_exists("__zs_ctrl_id")) {
-          global.__zs_ctrl_id = id; // elect primary controller
-      }
-
   - type: append
     code: |-
-      // --- Init simple watcher state
-      global.__zs_inside_prev = undefined;
-      global.__zs_inside_cd   = 0;
-
-      // --- Load ENTER sound (prefer custom file, then built-in assets)
-      var _enter = -1;
-      var _enter_path = "mods/audio/building/snd_building_enter.ogg";
-      if (file_exists(_enter_path)) {
-          _enter = audio_create_stream(_enter_path);
+      if (!variable_global_exists("building_enter_sound")) {
+          if (file_exists("mods/audio/building/snd_building_enter.ogg")) {
+              global.building_enter_sound = audio_create_stream("mods/audio/building/snd_building_enter.ogg");
+          } else {
+              global.building_enter_sound = -1;
+          }
       }
-      if (_enter == -1) {
-          _enter = asset_get_index("snd_building_enter");
-          if (_enter == -1) _enter = asset_get_index("snd_door_open");
-      }
-      global.__zs_snd_enter = _enter;
-
-      // --- Load EXIT sound (prefer custom file, then built-in assets)
-      var _exit = -1;
-      var _exit_path = "mods/audio/building/snd_building_exit.ogg";
-      if (file_exists(_exit_path)) {
-          _exit = audio_create_stream(_exit_path);
-      }
-      if (_exit == -1) {
-          _exit = asset_get_index("snd_building_exit");
-          if (_exit == -1) _exit = asset_get_index("snd_door_close");
-      }
-      global.__zs_snd_exit = _exit;
-
-      // Track stream origin (so we destroy only streams we created)
-      global.__zs_enter_is_stream = file_exists(_enter_path);
-      global.__zs_exit_is_stream  = file_exists(_exit_path);
-
-# --- Early-out guard in Step (runs before any other appended logic) -----------
-gml_Object_obj_controller_Step_0:
-  - type: prepend
-    code: |-
-      if (variable_global_exists("__zs_ctrl_id") && global.__zs_ctrl_id != id) {
-          exit; // not the primary controller; skip rest of this event
-      }
-
-  - type: append
-    code: |-
-      // --- Poll indoor flag and play on transitions
-      if (global.__zs_inside_cd > 0) global.__zs_inside_cd--;
-
-      var inside = undefined;
-
-      // Prefer common globals
-      if (variable_global_exists("is_inside") && is_bool(global.is_inside)) {
-          inside = global.is_inside;
-      } else if (variable_global_exists("is_indoor") && is_bool(global.is_indoor)) {
-          inside = global.is_indoor;
-      } else {
-          // Fallback: player instance flags
-          var pobj = asset_get_index("obj_player");
-          if (pobj != -1) {
-              var p = instance_find(pobj, 0);
-              if (instance_exists(p)) {
-                  if (variable_instance_exists(p, "is_inside")) {
-                      var v1 = variable_instance_get(p, "is_inside");
-                      if (is_bool(v1)) inside = v1;
-                  } else if (variable_instance_exists(p, "is_indoor")) {
-                      var v2 = variable_instance_get(p, "is_indoor");
-                      if (is_bool(v2)) inside = v2;
-                  }
-              }
+      if (!variable_global_exists("building_exit_sound")) {
+          if (file_exists("mods/audio/building/snd_building_exit.ogg")) {
+              global.building_exit_sound = audio_create_stream("mods/audio/building/snd_building_exit.ogg");
+          } else {
+              global.building_exit_sound = -1;
           }
       }
 
-      if (is_bool(inside)) {
-          if (is_undefined(global.__zs_inside_prev)) {
-              global.__zs_inside_prev = inside; // baseline
-          } else if (inside != global.__zs_inside_prev && global.__zs_inside_cd <= 0) {
-              if (inside) {
-                  if (global.__zs_snd_enter != -1) audio_play_sound(global.__zs_snd_enter, 1, false);
-              } else {
-                  if (global.__zs_snd_exit  != -1) audio_play_sound(global.__zs_snd_exit,  1, false);
-              }
-              global.__zs_inside_prev = inside;
-              global.__zs_inside_cd   = 8; // tiny debounce (~0.13s @60fps)
+# 3) Patch the exact indoor assignment in player_step_misc_globals to add SFX
+#    Keeps the original logic; injects transition hook right after the assignment.
+gml_GlobalScript_player_step_misc_globals:
+  - type: findreplaceregex
+    find: |-
+      \bis\s*_\s*indoor\s*=\s*y\s*>\s*obj_map_generator\.map_height\s*;
+    code: |-
+      is_indoor = y > obj_map_generator.map_height;
+      if (is_indoor && !was_indoor) {
+          if (global.building_enter_sound != -1) {
+              audio_play_sound(global.building_enter_sound, 10, false);
+          }
+      } else if (!is_indoor && was_indoor) {
+          if (global.building_exit_sound != -1) {
+              audio_play_sound(global.building_exit_sound, 10, false);
           }
       }
+      was_indoor = is_indoor;
 
-# --- Cleanup on instance destruction ----------------------------------------
+# 4) Cleanup: stop sounds on controller destruction (no destroy; base-safe)
 gml_Object_obj_controller_CleanUp_0:
   - type: append
     code: |-
-      // [Immersive-Sounds-Doors] cleanup (destroy streams we created)
-      if (variable_global_exists("__zs_snd_enter")) {
-          if (global.__zs_snd_enter != -1) {
-              audio_stop_sound(global.__zs_snd_enter);
-              if (variable_global_exists("__zs_enter_is_stream") && global.__zs_enter_is_stream) {
-                  audio_destroy_sound(global.__zs_snd_enter);
-              }
-          }
-          global.__zs_snd_enter = -1;
+      if (variable_global_exists("building_enter_sound") && global.building_enter_sound != -1) {
+          audio_stop_sound(global.building_enter_sound);
       }
-      if (variable_global_exists("__zs_snd_exit")) {
-          if (global.__zs_snd_exit != -1) {
-              audio_stop_sound(global.__zs_snd_exit);
-              if (variable_global_exists("__zs_exit_is_stream") && global.__zs_exit_is_stream) {
-                  audio_destroy_sound(global.__zs_snd_exit);
-              }
-          }
-          global.__zs_snd_exit = -1;
+      if (variable_global_exists("building_exit_sound") && global.building_exit_sound != -1) {
+          audio_stop_sound(global.building_exit_sound);
       }
-      if (variable_global_exists("__zs_inside_prev")) global.__zs_inside_prev = undefined;
-      if (variable_global_exists("__zs_inside_cd"))   global.__zs_inside_cd   = 0;
