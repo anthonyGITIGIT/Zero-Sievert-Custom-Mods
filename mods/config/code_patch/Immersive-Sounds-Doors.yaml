@@ -1,0 +1,46 @@
+# =============================================================================
+# Immersive-Sounds-Doors — Building Entry/Exit SFX (base-anchored, simple)
+# - Loads custom streams once in controller Create
+# - Replaces the authoritative indoor assignment with transition SFX
+# - Stops streams on controller CleanUp (no checks, no fallbacks)
+# Base anchor:
+#   gml_GlobalScript_player_step_misc_globals.gml
+#     is_indoor = y > obj_map_generator.map_height;
+# Custom files:
+#   mods/audio/building/snd_building_enter.ogg
+#   mods/audio/building/snd_building_exit.ogg
+# =============================================================================
+
+# 1) Load custom building enter/exit sounds unconditionally
+gml_Object_obj_controller_Create_0:
+  - type: append
+    code: |-
+      global.building_enter_sound = audio_create_stream("mods/audio/building/snd_building_enter.ogg");
+      global.building_exit_sound  = audio_create_stream("mods/audio/building/snd_building_exit.ogg");
+
+# 2) Ensure the player instance tracks previous indoor state
+gml_Object_obj_player_parent_Create_0:
+  - type: append
+    code: |-
+      was_indoor = false;
+
+# 3) Replace the indoor assignment with a multi-line block that plays SFX on transitions
+gml_GlobalScript_player_step_misc_globals:
+  - type: findreplacetrim
+    find: |-
+      is_indoor = y > obj_map_generator.map_height;
+    code: |-
+      is_indoor = y > obj_map_generator.map_height;
+      if (is_indoor && !was_indoor) {
+          audio_play_sound(global.building_enter_sound, 10, false);
+      } else if (!is_indoor && was_indoor) {
+          audio_play_sound(global.building_exit_sound, 10, false);
+      }
+      was_indoor = is_indoor;
+
+# 4) Stop streams on controller teardown (no checks, no destroy)
+gml_Object_obj_controller_CleanUp_0:
+  - type: append
+    code: |-
+      audio_stop_sound(global.building_enter_sound);
+      audio_stop_sound(global.building_exit_sound);
