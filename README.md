@@ -5,7 +5,7 @@ This repository is accessible to **ChatGPT** and is intended to **store and main
 - **Default branch:** `main` (unless specified otherwise).
 - **Suggested layout:**
     /mods/config/code_patch/<mod-name.yaml>
-	/backups/
+    /backups/
     README.md
 - **Commit style:** `feat(mod-name): ...`, `fix(mod-name): ...`, `chore: ...`
 
