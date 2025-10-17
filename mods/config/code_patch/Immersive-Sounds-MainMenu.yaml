@@ -1,0 +1,31 @@
+# =============================================================================
+# Immersive-Sounds-MainMenu — Replace main menu music with custom stream
+# Rules: start simple, base-anchored, no regex, no existence checks, no fallbacks
+# Base anchor (Step):
+#   if (!audio_is_playing(snd_main_menu_2) && audio_group_is_loaded(snd_assault_rifle))
+#       audio_play_sound(snd_main_menu_2, 20, false);
+# Custom file:
+#   mods/audio/music/snd_main_menu_music.ogg
+# =============================================================================
+
+# 1) Init stream in the *main menu* Create so it's set before Step runs
+gml_Object_obj_main_menu_Create_0:
+  - type: append
+    code: |-
+      global.main_menu_music = audio_create_stream("mods/audio/music/snd_main_menu_music.ogg");
+
+# 2) Replace the two-line base play block in main menu Step (multi-line -> findreplacetrim)
+gml_Object_obj_main_menu_Step_0:
+  - type: findreplacetrim
+    find: |-
+      if (!audio_is_playing(snd_main_menu_2) && audio_group_is_loaded(snd_assault_rifle))
+          audio_play_sound(snd_main_menu_2, 20, false);
+    code: |-
+      if (!audio_is_playing(global.main_menu_music) && audio_group_is_loaded(snd_assault_rifle))
+          audio_play_sound(global.main_menu_music, 20, false);
+
+# 3) Stop the stream when leaving the main menu (simple cleanup)
+gml_Object_obj_main_menu_CleanUp_0:
+  - type: append
+    code: |-
+      audio_stop_sound(global.main_menu_music);
