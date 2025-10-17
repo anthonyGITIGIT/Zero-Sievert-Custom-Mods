@@ -1,20 +1,151 @@
-# ZS Mod Pack – gmloader code_patch file
-# Purpose: verify GMLoader pipeline + provide a safe startup hook.
-# Notes: Uses the official GMLoader ImportConfigDefinedCode schema (types: findreplace, findreplacetrim, findreplaceregex, prepend, append).
-# Source: https://github.com/Senjay-id/GMLoader/wiki/Modders-guide (mirrored)
-# Scope: Conservative; no gameplay changes yet.
+# =============================================================================
+# Zero Sievert – Building Entry/Exit SFX (simple + custom sounds + guards + cleanup)
+# Author: ChatGPT (Zero Sievert – Gamemaker – GMloader)
+# Purpose: Play a sound when entering/exiting buildings.
+# Design: Minimal watcher; prefers custom .ogg; singleton guard; safe cleanup.
+# Notes: Safe no-op if indoor flag or sounds are unavailable.
+# =============================================================================
 
-# --- Startup hook: append a tiny init snippet to the controller Create event ---
-# This event name exists in ZERO Sievert (seen in crashes/logs as gml_Object_obj_controller_Create_0).
-# The code is harmless: sets a global marker and prints a debug line once at startup.
-# If the target script name ever changes, this patch will just be ignored.
-
+# --- Singleton election early (ensure only one controller drives the logic) ---
 gml_Object_obj_controller_Create_0:
-  - type: append
-
+  - type: prepend
     code: |-
-      // [GMLoader] mods-here.yaml loaded (Zero Sievert – Custom Mods)
-      if (!variable_global_exists("__zs_mods__")) {
-          global.__zs_mods__ = 1;
-          show_debug_message("[ZS Mods] gmloader pipeline OK – mods-here.yaml appended to obj_controller Create.");
+      if (!variable_global_exists("__zs_ctrl_id")) {
+          global.__zs_ctrl_id = id; // elect primary controller
       }
+
+  - type: append
+    code: |-
+      // --- Init simple watcher state
+      global.__zs_inside_prev = undefined;
+      global.__zs_inside_cd   = 0;
+
+      // --- Load ENTER sound (prefer custom file, then built-in assets)
+      var _enter = -1;
+      var _enter_path = "mods/audio/building/snd_building_enter.ogg";
+      if (file_exists(_enter_path)) {
+          _enter = audio_create_stream(_enter_path);
+      }
+      if (_enter == -1) {
+          _enter = asset_get_index("snd_building_enter");
+          if (_enter == -1) _enter = asset_get_index("snd_door_open");
+      }
+      global.__zs_snd_enter = _enter;
+
+      // --- Load EXIT sound (prefer custom file, then built-in assets)
+      var _exit = -1;
+      var _exit_path = "mods/audio/building/snd_building_exit.ogg";
+      if (file_exists(_exit_path)) {
+          _exit = audio_create_stream(_exit_path);
+      }
+      if (_exit == -1) {
+          _exit = asset_get_index("snd_building_exit");
+          if (_exit == -1) _exit = asset_get_index("snd_door_close");
+      }
+      global.__zs_snd_exit = _exit;
+
+      // Track whether we created stream handles (for safe destruction later)
+      global.__zs_enter_is_stream = file_exists(_enter_path);
+      global.__zs_exit_is_stream  = file_exists(_exit_path);
+
+# --- Early-out guard in Step (runs before any other appended logic) -----------
+gml_Object_obj_controller_Step_0:
+  - type: prepend
+    code: |-
+      if (variable_global_exists("__zs_ctrl_id") && global.__zs_ctrl_id != id) {
+          exit; // not the primary controller; skip rest of this event
+      }
+
+  - type: append
+    code: |-
+      // --- Poll indoor flag and play on transitions
+      if (global.__zs_inside_cd > 0) global.__zs_inside_cd--;
+
+      var inside = undefined;
+
+      // Prefer common globals
+      if (variable_global_exists("is_inside") && is_bool(global.is_inside)) {
+          inside = global.is_inside;
+      } else if (variable_global_exists("is_indoor") && is_bool(global.is_indoor)) {
+          inside = global.is_indoor;
+      } else {
+          // Fallback: player instance flags
+          var pobj = asset_get_index("obj_player");
+          if (pobj != -1) {
+              var p = instance_find(pobj, 0);
+              if (instance_exists(p)) {
+                  if (variable_instance_exists(p, "is_inside")) {
+                      var v1 = variable_instance_get(p, "is_inside");
+                      if (is_bool(v1)) inside = v1;
+                  } else if (variable_instance_exists(p, "is_indoor")) {
+                      var v2 = variable_instance_get(p, "is_indoor");
+                      if (is_bool(v2)) inside = v2;
+                  }
+              }
+          }
+      }
+
+      if (is_bool(inside)) {
+          if (is_undefined(global.__zs_inside_prev)) {
+              global.__zs_inside_prev = inside; // baseline
+          } else if (inside != global.__zs_inside_prev && global.__zs_inside_cd <= 0) {
+              if (inside) {
+                  if (global.__zs_snd_enter != -1) audio_play_sound(global.__zs_snd_enter, 1, false);
+              } else {
+                  if (global.__zs_snd_exit  != -1) audio_play_sound(global.__zs_snd_exit,  1, false);
+              }
+              global.__zs_inside_prev = inside;
+              global.__zs_inside_cd   = 8; // tiny debounce (~0.13s @60fps)
+          }
+      }
+
+# --- Cleanup on instance destruction / game end -------------------------------
+gml_Object_obj_controller_CleanUp_0:
+  - type: append
+    code: |-
+      // [ZS Mods] Building SFX cleanup (only destroy streams we created)
+      if (variable_global_exists("__zs_snd_enter")) {
+          if (global.__zs_snd_enter != -1) {
+              audio_stop_sound(global.__zs_snd_enter);
+              if (variable_global_exists("__zs_enter_is_stream") && global.__zs_enter_is_stream) {
+                  audio_destroy_sound(global.__zs_snd_enter);
+              }
+          }
+          global.__zs_snd_enter = -1;
+      }
+      if (variable_global_exists("__zs_snd_exit")) {
+          if (global.__zs_snd_exit != -1) {
+              audio_stop_sound(global.__zs_snd_exit);
+              if (variable_global_exists("__zs_exit_is_stream") && global.__zs_exit_is_stream) {
+                  audio_destroy_sound(global.__zs_snd_exit);
+              }
+          }
+          global.__zs_snd_exit = -1;
+      }
+      if (variable_global_exists("__zs_inside_prev")) global.__zs_inside_prev = undefined;
+      if (variable_global_exists("__zs_inside_cd"))   global.__zs_inside_cd   = 0;
+
+gml_Object_obj_controller_GameEnd_0:
+  - type: append
+    code: |-
+      // Mirror cleanup at Game End for belt-and-suspenders robustness
+      if (variable_global_exists("__zs_snd_enter")) {
+          if (global.__zs_snd_enter != -1) {
+              audio_stop_sound(global.__zs_snd_enter);
+              if (variable_global_exists("__zs_enter_is_stream") && global.__zs_enter_is_stream) {
+                  audio_destroy_sound(global.__zs_snd_enter);
+              }
+          }
+          global.__zs_snd_enter = -1;
+      }
+      if (variable_global_exists("__zs_snd_exit")) {
+          if (global.__zs_snd_exit != -1) {
+              audio_stop_sound(global.__zs_snd_exit);
+              if (variable_global_exists("__zs_exit_is_stream") && global.__zs_exit_is_stream) {
+                  audio_destroy_sound(global.__zs_snd_exit);
+              }
+          }
+          global.__zs_snd_exit = -1;
+      }
+      if (variable_global_exists("__zs_inside_prev")) global.__zs_inside_prev = undefined;
+      if (variable_global_exists("__zs_inside_cd"))   global.__zs_inside_cd   = 0;
