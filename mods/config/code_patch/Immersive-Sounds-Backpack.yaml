@@ -1,20 +1,18 @@
 # =============================================================================
-# Immersive-Sounds-Backpack — Inventory Open/Close SFX (base-anchored, no regex)
-# - Single-line replacement uses findreplace
-# - Multi-line header injection uses findreplacetrim
-# - No existence checks, no fallbacks
+# Immersive-Sounds-Backpack — Inventory Open/Close SFX (future-proofed)
+# Rules: start simple, base-anchored, no regex, use findreplace / findreplacetrim,
+#        no existence checks, no fallbacks.
 # =============================================================================
 
-# 1) Load custom backpack sounds unconditionally
+# 1) Load custom backpack sounds + init suppress flag
 gml_Object_obj_controller_Create_0:
   - type: append
     code: |-
-      global.backpack_open_sound  = audio_create_stream("mods/audio/interface/snd_backpack_open.ogg");
-      global.backpack_close_sound = audio_create_stream("mods/audio/interface/snd_backpack_close.ogg");
+      global.backpack_open_sound  = audio_create_stream("mods/audio/interface/snd_ui_backpack_open.ogg");
+      global.backpack_close_sound = audio_create_stream("mods/audio/interface/snd_ui_backpack_close.ogg");
+      global.__zs_suppress_inv_close_sfx = 0;
 
 # 2) Replace the vanilla inventory-open sound (single line -> findreplace)
-#    From: gml_GlobalScript_player_action_open_inventory.gml
-#    audio_play_sound(snd_inventory_open, 2, false);
 gml_GlobalScript_player_action_open_inventory:
   - type: findreplace
     find: |-
@@ -22,8 +20,9 @@ gml_GlobalScript_player_action_open_inventory:
     code: |-
       audio_play_sound(global.backpack_open_sound, 10, false);
 
-# 3) Inject close SFX at start of ui_inventory_close_all() (multi-line -> findreplacetrim)
-#    We match the header + first four lines exactly, then re-emit with our close sound added.
+# 3) Gate backpack CLOSE SFX:
+#    - Skip if containers flagged suppression
+#    - Skip if a chest is open (container close path)
 gml_GlobalScript_ui_inventory_close_all:
   - type: findreplacetrim
     find: |-
@@ -32,17 +31,22 @@ gml_GlobalScript_ui_inventory_close_all:
           uiGetData().reward_item = undefined;
           uiGetData().player_got_hit = false;
           var _layer = uiOnionCurrentLayer();
-          var _layer2 = uiOnionCurrent();
     code: |-
       function ui_inventory_close_all()
       {
           uiGetData().reward_item = undefined;
           uiGetData().player_got_hit = false;
-          audio_play_sound(global.backpack_close_sound, 10, false);
-          var _layer = uiOnionCurrentLayer();
-          var _layer2 = uiOnionCurrent();
 
-# 4) Cleanup: stop streams (no checks, no destroy)
+          // Only play backpack CLOSE when not suppressed AND not closing a chest UI
+          if (global.__zs_suppress_inv_close_sfx || uiGetData().chest_using) {
+              global.__zs_suppress_inv_close_sfx = 0;
+          } else {
+              audio_play_sound(global.backpack_close_sound, 10, false);
+          }
+
+          var _layer = uiOnionCurrentLayer();
+
+# 4) Stop streams on teardown (no destroy)
 gml_Object_obj_controller_CleanUp_0:
   - type: append
     code: |-

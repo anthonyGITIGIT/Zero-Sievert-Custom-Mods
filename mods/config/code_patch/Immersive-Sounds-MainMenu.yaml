@@ -12,7 +12,7 @@
 gml_Object_obj_main_menu_Create_0:
   - type: append
     code: |-
-      global.main_menu_music = audio_create_stream("mods/audio/music/snd_main_menu_music.ogg");
+      global.music_main_menu = audio_create_stream("mods/audio/music/snd_music_main_menu.ogg");
 
 # 2) Replace the two-line base play block in main menu Step (multi-line -> findreplacetrim)
 gml_Object_obj_main_menu_Step_0:
@@ -21,11 +21,11 @@ gml_Object_obj_main_menu_Step_0:
       if (!audio_is_playing(snd_main_menu_2) && audio_group_is_loaded(snd_assault_rifle))
           audio_play_sound(snd_main_menu_2, 20, false);
     code: |-
-      if (!audio_is_playing(global.main_menu_music) && audio_group_is_loaded(snd_assault_rifle))
-          audio_play_sound(global.main_menu_music, 20, false);
+      if (!audio_is_playing(global.music_main_menu) && audio_group_is_loaded(snd_assault_rifle))
+          audio_play_sound(global.music_main_menu, 20, false);
 
 # 3) Stop the stream when leaving the main menu (simple cleanup)
 gml_Object_obj_main_menu_CleanUp_0:
   - type: append
     code: |-
-      audio_stop_sound(global.main_menu_music);
+      audio_stop_sound(global.music_main_menu);
