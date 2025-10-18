@@ -1,7 +1,8 @@
 # =============================================================================
 # Immersive-Sounds-Backpack — Inventory Open/Close SFX (future-proofed)
-# Rules: start simple, base-anchored, no regex, use findreplace / findreplacetrim,
+# Rules: start simple, base-anchored, no regex; use append / findreplace / findreplacetrim;
 #        no existence checks, no fallbacks.
+# Change: Only suppress backpack-close when a non-"Ground" chest UI is involved.
 # =============================================================================
 
 # 1) Load custom backpack sounds + init suppress flag
@@ -13,6 +14,7 @@ gml_Object_obj_controller_Create_0:
       global.__zs_suppress_inv_close_sfx = 0;
 
 # 2) Replace the vanilla inventory-open sound (single line -> findreplace)
+#    Base anchor: gml_GlobalScript_player_action_open_inventory.gml
 gml_GlobalScript_player_action_open_inventory:
   - type: findreplace
     find: |-
@@ -20,9 +22,11 @@ gml_GlobalScript_player_action_open_inventory:
     code: |-
       audio_play_sound(global.backpack_open_sound, 10, false);
 
-# 3) Gate backpack CLOSE SFX:
-#    - Skip if containers flagged suppression
-#    - Skip if a chest is open (container close path)
+# 3) Gate the backpack CLOSE SFX (multi-line -> findreplacetrim)
+#    Skip close SFX if:
+#      - Containers set the one-shot suppression flag, OR
+#      - A non-"Ground" chest UI is closing (container flow)
+#    Otherwise, play backpack-close as normal (for plain inventory closes).
 gml_GlobalScript_ui_inventory_close_all:
   - type: findreplacetrim
     find: |-
@@ -37,8 +41,7 @@ gml_GlobalScript_ui_inventory_close_all:
           uiGetData().reward_item = undefined;
           uiGetData().player_got_hit = false;
 
-          // Only play backpack CLOSE when not suppressed AND not closing a chest UI
-          if (global.__zs_suppress_inv_close_sfx || uiGetData().chest_using) {
+          if (global.__zs_suppress_inv_close_sfx || (uiGetData().chest_using && uiGetData().loot_name != "Ground")) {
               global.__zs_suppress_inv_close_sfx = 0;
           } else {
               audio_play_sound(global.backpack_close_sound, 10, false);
@@ -46,7 +49,7 @@ gml_GlobalScript_ui_inventory_close_all:
 
           var _layer = uiOnionCurrentLayer();
 
-# 4) Stop streams on teardown (no destroy)
+# 4) Stop streams on teardown (belt-and-suspenders; no destroy)
 gml_Object_obj_controller_CleanUp_0:
   - type: append
     code: |-
